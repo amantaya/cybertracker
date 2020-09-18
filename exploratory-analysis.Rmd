@@ -1,0 +1,27 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+First, let's read in the wolf database from September 12, 2020 at 08:00:00 am. This database contains mostly sighting records from J. Brad Miller, however there are some sightings from Manuel. Additionally, this database has a number of 'fake' data points that were created while learning the functionality of the Cybertracker application. We're going to be cleaning up 
+
+```{r}
+old_database <- read.csv(file="C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/2020-09-12-08-00-00-wolf-xdiamond-database.csv", header=TRUE)
+
+old_database
+```
+
+```{r}
+current_database<- read.csv(file="C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/2020-09-12-08-15-00-wolf-xdiamond-database.csv", header=TRUE)
+
+current_database
+```
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
