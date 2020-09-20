@@ -2,26 +2,104 @@
 title: "R Notebook"
 output: html_notebook
 ---
-
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
 
-First, let's read in the wolf database from September 12, 2020 at 08:00:00 am. This database contains mostly sighting records from J. Brad Miller, however there are some sightings from Manuel. Additionally, this database has a number of 'fake' data points that were created while learning the functionality of the Cybertracker application. We're going to be cleaning up 
 
-```{r}
-old_database <- read.csv(file="C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/2020-09-12-08-00-00-wolf-xdiamond-database.csv", header=TRUE)
-
-old_database
-```
-
-```{r}
-current_database<- read.csv(file="C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/2020-09-12-08-15-00-wolf-xdiamond-database.csv", header=TRUE)
-
-current_database
-```
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
 
 When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
 
 The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+# clear the enviroment
+rm(list=ls(all=TRUE))
+```
+
+***
+Let's check the working directory to see if it's correct.
+```{r}
+getwd()
+```
+Looks good for my (Andrew's) PC
+***
+
+I created an external R script with contains all of the functions that I commongly use across different scripts. This chunk of code reads in those functions into the global R environment.
+```{r}
+source("packages.R")
+```
+First, let's read in the wolf database from September 12, 2020 at 08:15:00 am. This database contains mostly sighting records from J. Brad Miller, however there are some sightings from Manuel. Additionally, this database has a number of 'fake' data points that were created while learning the functionality of the Cybertracker application. We're going to be cleaning up the database in the following steps. In this database, sighting records from each user are mixed together, so we can't tell which records are from Manuel, and which are from J Brad Miller (yet). We will extract the sighting data recorded by each user into separate databases in a future step.
+```{r}
+wolf_data_RAW<- read.csv(file="C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/2020-09-12-08-15-00-wolf-xdiamond-database.csv", header=TRUE)
+
+wolf_data_RAW
+```
+```{r}
+wolf_tibble_RAW <- as_tibble(wolf_data_RAW)
+
+wolf_tibble_RAW
+
+# View(wolf_tibble_RAW)
+```
+```{r}
+wolf_tibble_missing_locations_removed <- drop_na(wolf_tibble_RAW, Latitude)
+
+wolf_tibble_missing_locations_removed
+
+# View(wolf_tibble_missing_locations_removed)
+```
+Several records have erroneous wolf sighting data, which we need to inspect and determine if this data needs to be removed from the dataset. For example, two records have 99 adults and 22 adults, both numbers which are highly unlikely to occur in reality.
+```{r}
+filter(wolf_tibble_missing_locations_removed, Adults >= 10)
+```
+We're going to remove these erroneous data points by subsetting the dataframe. In this instance, we're selecting all sighting records that have fewer than 10 adults or the number of adults is NA (meaning that no wolves were sighted).
+```{r}
+wolf_tibble_too_many_adults_removed <-  subset(wolf_tibble_missing_locations_removed, Adults <= 10 | is.na(Adults))
+
+wolf_tibble_too_many_adults_removed
+```
+
+Now let's clean up the dates, which will make visualizing our data much easier. This function uses the Lubridate package that has a special variable class just for working with dates. This function takes the Date and Time columns in our dataset and converts them to this special variable called 'DateTime'.
+
+```{r}
+cleandates <- function(df){
+  df <- unite(df, Date, Time, col = "DateTime", sep = " ", remove = TRUE)
+  df$DateTime <- mdy_hms(df$DateTime)
+  df <- arrange(df, DateTime)
+  return(df)
+}
+```
+
+
+```{r}
+wolf_tibble_dates_formatted <- cleandates(wolf_tibble_too_many_adults_removed)
+
+wolf_tibble_dates_formatted
+```
+Let's take a look at all of the dates that users recorded sightings. This is helpful way to visualize the dataset to see what we're working with. Some of these dates have multiple sighting records, which is easily visualized in the plot.
+```{r}
+all_dates_table <- wolf_tibble_dates_formatted %>% group_by(date(DateTime)) %>% summarise(frequency = n())
+
+all_dates_table
+
+barplot(all_dates_table$frequency,
+        axes = FALSE)
+axis(1, at = seq(0.7, 27.1, by=1.2), labels = all_dates_table$`date(DateTime)`, las = 2, cex.axis = 0.75)
+axis(2, at = seq(0, 10, by=1), cex.axis = .75, padj = 1)
+```
+```{r}
+wolf_tibble_dates_formatted
+```
+
+```{r}
+map <- leaflet() %>% addTiles() %>% addMarkers(lng = wolf_tibble_dates_formatted$Longitude, 
+                                               lat = wolf_tibble_dates_formatted$Latitude, 
+                                               popup = wolf_tibble_dates_formatted$Type)
+
+map
+```
+
+
+
