@@ -1,0 +1,17 @@
+# Commongly Used Packages
+
+library("ggplot2")
+library("ggthemes")
+library("dplyr")
+library("tidyr")
+library("jpeg")
+library("viridis")
+library("scales")
+library("knitr")
+library("lubridate")
+library("magrittr")
+library("readr")
+library("stringr")
+library("units")
+library("compare")
+library("leaflet")
