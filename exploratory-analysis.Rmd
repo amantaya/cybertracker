@@ -101,5 +101,182 @@ map <- leaflet() %>% addTiles() %>% addMarkers(lng = wolf_tibble_dates_formatted
 map
 ```
 
+```{r}
+# Create a matrix to store the X (Longitude) and Y (Latitude) coordinates
+coords = cbind(wolf_tibble_dates_formatted$Longitude, wolf_tibble_dates_formatted$Latitude) 
+# View the first 6 rows of this newly created matrix
+# head(coords)
+
+# Define which Coordinate Reference System (CRS) we are using with this dataset
+prj <- CRS("+init=epsg:4326")
+
+# Create a Spatial Points Data Frame to store our data
+wolf_spdf = SpatialPointsDataFrame(coords, 
+                              wolf_tibble_dates_formatted, 
+                              proj4string = prj)
+
+# View the Spatial Points Data Frame
+wolf_spdf
+```
+We need to remove the sighting records that were created at the X Diamond HQ. These records are likely 'fake' data that were created to learn and test the functionality of the Cybertracker application. First, we need to define the location of the X Diamond HQ.
+```{r}
+# These coordinates are the location of the X Diamond HQ
+xdiamond_hq_coords <- data.frame(x = -109.42483722, y = 34.08112524)
+xdiamond_hq_coords
+
+# Convert the Data Frame into Spatial Points
+# This uses the Coordinate Reference System defined in an earlier step
+xdiamond_hq_coords_sp <- SpatialPoints(xdiamond_hq_coords, proj4string = prj)
+xdiamond_hq_coords_sp
+```
+We need to transform the coordinates from lat/long into UTM, because UTM is a planar(grid) system and many of the actions we want to perform expects a planar system. Here we're going create multiple buffers to test if the buffer distance will select all of the records we want to remove from around the X Diamond HQ.
+```{r}
+# Transform from lat/long into UTM
+# The units are in map units, which in this case is meters
+xdiamond_hq_utm <- spTransform(xdiamond_hq_coords_sp, CRS("+init=epsg:32612"))
+
+# Create a buffer around the X Diamond HQ
+xdiamond_hq_20_buffer_utm <- gBuffer(xdiamond_hq_utm, width = 20)
+xdiamond_hq_50_buffer_utm <- gBuffer(xdiamond_hq_utm, width = 50)
+```
+We also need to transform our wolf spatial points dataframe, from lat/long to UTM, for the same reason. 
+```{r}
+# Transform from lat/long into UTM
+# The units are in map units, which in this case is meters
+wolf_spdf_utm <- spTransform(wolf_spdf, CRS("+init=epsg:32612"))
+wolf_spdf_utm  
+```
+Here we intersect the different buffer sizes with our wolf spatial points data frame. The last bit tests how many points intersected with each buffer to give us an idea of how the buffer sizes differ.
+```{r}
+xdiamond_hq_wolf_intersects_20 <- gIntersects(xdiamond_hq_20_buffer_utm, wolf_spdf_utm, byid=TRUE)
+
+xdiamond_hq_wolf_intersects_50 <- gIntersects(xdiamond_hq_50_buffer_utm, wolf_spdf_utm, byid=TRUE)
+
+# Count how many points intersected with each buffer
+table(xdiamond_hq_wolf_intersects_20)["TRUE"]
+table(xdiamond_hq_wolf_intersects_50)["TRUE"]
+```
+Now we're going to remove the points that intersected with the buffer, as these points represent the 'fake' data that was created at the X Diamond HQ as test data.
+```{r}
+wolf_spdf_fake_points_near_hq_removed <- wolf_spdf_utm[as.vector(xdiamond_hq_wolf_intersects_50) == FALSE, ]
+
+# Display this new dataframe with the 'fake' points removed
+as.data.frame(wolf_spdf_fake_points_near_hq_removed)
+
+# Export as a Shapefile
+# shapefile(wolf_spdf_fake_points_near_hq_removed, "wolf_cybertracker_database_cleaned.shp")
+```
+To better visualize which sighting records we removed, and how they affected our dataset, we're going to plot the data before we cleaned it up, and then after we cleaned it up. 
+```{r}
+wolf_tibble_cleaned <- as_tibble(wolf_spdf_fake_points_near_hq_removed)
+
+cleaned_dates <- wolf_tibble_cleaned  %>% group_by(date(DateTime)) %>% summarise(frequency = n())
+
+cleaned_dates
+
+# Ideally, the x-axis should match when comparing the figures. However, I need to create a table of dates and frequencies, with 0s filled in for the dates where sighting records were removed during the cleaning process.
+
+# This plot shows the number of sighting records by date BEFORE we cleaned up the database
+barplot(all_dates_table$frequency, axes = FALSE, main = "Sighting Records Before Cleaning")
+axis(1, at = seq(0.7, 27.1, by=1.2), labels = all_dates_table$`date(DateTime)`, las = 2, cex.axis = 0.75)
+axis(2, at = seq(0, 10, by=1), cex.axis = .75, padj = 1)
+
+# This plot shows the number of sighting records by date AFTER we cleaned up the database
+barplot(cleaned_dates$frequency, axes = FALSE, main = "Sighting Records After Cleaning")
+axis(1, at = seq(0.7, 21.1, by=1.2), labels = cleaned_dates$`date(DateTime)`, las = 2, cex.axis = 0.75)
+axis(2, at = seq(0, 10, by=1), cex.axis = .75, padj = 1)
+```
+Let's plot the cleaned data on map to better visualize it.
+```{r}
+map <- leaflet() %>% addTiles() %>% addMarkers(lng = wolf_tibble_cleaned$Longitude, 
+                                               lat = wolf_tibble_cleaned$Latitude, 
+                                               popup = wolf_tibble_cleaned$Type)
+
+map
+```
+We exported the Cybertracker database as two shapefiles, one with tracker points integrated into the the track, and another with just the sighting records. We already cleaned up the sighting records, so we don't need this shapefile. We do need the shapefile with the tracker points.
+```{r}
+ogrDrivers()
+
+timer_tracks_spdf <- shapefile("C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/wolf_shapefile_integrated_track.SHP")
+
+# The CRS is missing from the spatial points data frame (this is Cybertracker's fault)
+# We'll set it to our standard WGS84
+proj4string(timer_tracks_spdf) <- prj
+
+# wolf_shapefile_spdf <- shapefile("C:/Users/andre/Dropbox/Horse_Research/Cybertracker/database_export/wolf_shapefile.SHP")
+
+# proj4string(wolf_shapefile_spdf) <- prj
+
+as.data.frame(timer_tracks_spdf)
+
+wolf_tibble_cleaned
+#View(as.data.frame(wolf_shapefile_spdf))
+```
+Let's clean up the tracker points spatial points data frame by removing a couple miscellaneous columns.
+```{r}
+timer_tracks_df <- as.data.frame(timer_tracks_spdf)
+
+timer_tracks_df_misc_columns_removed <- timer_tracks_df[ , -c(1,2)]
+
+as.data.frame(timer_tracks_df_misc_columns_removed)
+```
+We're also going to rename the columns to match our Wolf data.
+```{r}
+# To grab the column names fromt the Wolf data, we first have to undo combining the date and time columns
+wolf_tibble_cleaned_dates_separated <- separate(wolf_tibble_cleaned, col = as.character("DateTime"), c("Date", "Time"), sep = " ")
+
+column_names <- names(wolf_tibble_cleaned_dates_separated)
+
+colnames(timer_tracks_df_misc_columns_removed) <- column_names
+
+names(timer_tracks_df_misc_columns_removed)
+
+timer_tracks_df_misc_columns_removed
+```
+
+And we'll convert the Date and Time to a new column DateTime using the Lubridate package.
+```{r}
+timer_tracks_combined_date_time_columns <- unite(timer_tracks_df_misc_columns_removed, Date, Time, col = "DateTime", sep = " ", remove = TRUE)
+
+timer_tracks_combined_date_time_columns$DateTime <- ymd_hms(timer_tracks_combined_date_time_columns$DateTime)
+
+timer_tracks_combined_date_time_columns
+```
+Let's drop all of the wolf sighting data from the timer track data to be sure we remove any 'fake' data. We'll replace that data with our cleaned up wolf sighting data. 
+```{r}
+timer_tracks_df_sightings_removed <- filter(timer_tracks_combined_date_time_columns, is.na(timer_tracks_combined_date_time_columns$Type) == TRUE)
+
+View(timer_tracks_df_sightings_removed)
+```
+
+Now we need to transform the data into a planar CRS, in this case UTM.
+```{r}
+# We need to drop some extra columns that were created when we converted a Spatial Points Data Frame to regular data frame. We'll get these columns back when we convert into a new spdf. 
+
+drops <- c("coords.x1", "coords.x2")
+
+timer_tracks_dropped_extra_columns<- timer_tracks_df_sightings_removed[ , !(names(timer_tracks_df_sightings_removed) %in% drops)]
+
+timer_tracks_coords <- cbind(timer_tracks_dropped_extra_columns$Longitude,
+                             timer_tracks_dropped_extra_columns$Latitude)
+
+timer_tracks_spdf <- SpatialPointsDataFrame(timer_tracks_coords, 
+                                            timer_tracks_dropped_extra_columns, 
+                                            proj4string = prj)
+
+# Transform into UTM so we can do some planar operations
+timer_tracks_utm <- spTransform(timer_tracks_spdf, CRS("+init=epsg:32612"))
+
+as.data.frame(timer_tracks_spdf)
+as.data.frame(timer_tracks_utm)
+```
+Similar to what we did to clean up the wolf sighting data, we're going to perform an intersect with the X Diamond HQ buffer to remove any tracker points that we're collected near the X Diamond HQ, such as when we tested collecting data at the HQ or when folks parked their trucks but forgot to turn off their units.
+```{r}
+xdiamond_hq_timer_tracks_intersects_50 <- gIntersects(xdiamond_hq_50_buffer_utm, timer_tracks_utm, byid=TRUE)
+
+table(xdiamond_hq_wolf_intersects_50)["TRUE"]
+```
+
 
 
